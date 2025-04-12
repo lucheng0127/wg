@@ -7,4 +7,5 @@ type Subnet struct {
 	Addr   string `xorm:"not null unique 'addr'"`
 	PubKey string `xorm:"not null unique 'pubkey'"`
 	PriKey string `xorm:"not null unique 'prikey'"`
+	Port   int    `xorm:"not null unique 'port'"`
 }

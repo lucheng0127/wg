@@ -21,7 +21,7 @@ type WG struct {
 	Peers     []*Peer
 }
 
-func (w *WG) cfgFilePath() string {
+func (w *WG) CfgFilePath() string {
 	return filepath.Join(w.CfgDir, fmt.Sprintf("%s.conf", w.Name))
 }
 
@@ -125,6 +125,25 @@ func (w *WG) Down() error {
 	return nil
 }
 
+func (w *WG) Update() error {
+	wgMgr, err := cmd.NewCmdMgr("wg")
+	if err != nil {
+		return err
+	}
+
+	// Generate conf
+	if err := w.generateConfig(); err != nil {
+		return fmt.Errorf("failed to generate peer config file %s for %s: %s", w.CfgFilePath(), w.Name, err.Error())
+	}
+
+	// Sync conf
+	if _, err := wgMgr.Execute(strings.Split(fmt.Sprintf("syncconf %s %s", w.Name, w.CfgFilePath()), " ")...); err != nil {
+		return fmt.Errorf("failed to sync config for %s with %s: %s", w.Name, w.CfgFilePath(), err.Error())
+	}
+
+	return nil
+}
+
 func (w *WG) Up() error {
 	// Pre up
 	if w.Interface.PreUp != "" {
@@ -172,13 +191,13 @@ func (w *WG) Up() error {
 
 	// Generate config
 	if err := w.generateConfig(); err != nil {
-		return fmt.Errorf("failed to generate peer config file %s for %s: %s", w.cfgFilePath(), w.Name, err.Error())
+		return fmt.Errorf("failed to generate peer config file %s for %s: %s", w.CfgFilePath(), w.Name, err.Error())
 	}
 
 	// Config key and peers
 	// When update peers use syncconf to sync peers config
-	if _, err := wgMgr.Execute(strings.Split(fmt.Sprintf("setconf %s %s", w.Name, w.cfgFilePath()), " ")...); err != nil {
-		return fmt.Errorf("failed to set config for %s with %s: %s", w.Name, w.cfgFilePath(), err.Error())
+	if _, err := wgMgr.Execute(strings.Split(fmt.Sprintf("setconf %s %s", w.Name, w.CfgFilePath()), " ")...); err != nil {
+		return fmt.Errorf("failed to set config for %s with %s: %s", w.Name, w.CfgFilePath(), err.Error())
 	}
 
 	// Post up
@@ -198,7 +217,7 @@ func (w *WG) Up() error {
 }
 
 func (w *WG) generateConfig() error {
-	f, err := os.Create(w.cfgFilePath())
+	f, err := os.Create(w.CfgFilePath())
 	if err != nil {
 		return err
 	}
@@ -211,7 +230,11 @@ func (w *WG) generateConfig() error {
 	if _, err := fw.WriteString(fmt.Sprintf("PrivateKey = %s\n", w.Interface.PrivateKey)); err != nil {
 		return err
 	}
-	if _, err := fw.WriteString(fmt.Sprintf("ListenPort = %d\n", w.Interface.ListenPort)); err != nil {
+	listenPort := 51820
+	if w.Interface.ListenPort != 0 {
+		listenPort = w.Interface.ListenPort
+	}
+	if _, err := fw.WriteString(fmt.Sprintf("ListenPort = %d\n", listenPort)); err != nil {
 		return err
 	}
 

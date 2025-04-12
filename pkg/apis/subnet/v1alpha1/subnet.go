@@ -2,7 +2,9 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/emicklei/go-restful"
@@ -11,15 +13,26 @@ import (
 	modelv1 "github.com/lucheng0127/wg/pkg/models/v1alpha1"
 	"github.com/lucheng0127/wg/pkg/utils/validate"
 	"github.com/vishvananda/netlink"
+	"k8s.io/klog/v2"
 	"xorm.io/xorm"
 )
 
 type handler struct {
-	DB *xorm.Engine
+	DB               *xorm.Engine
+	ChangeSubnetChan chan string
+	AddSubnetChan    chan string
+	accessIp         string
+	rRoute           []string
 }
 
-func newHandler(db *xorm.Engine) *handler {
-	return &handler{db}
+func newHandler(db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, accessIp string, rroute []string) *handler {
+	return &handler{
+		DB:               db,
+		ChangeSubnetChan: changeSubnetChan,
+		AddSubnetChan:    addSubnetChan,
+		accessIp:         accessIp,
+		rRoute:           rroute,
+	}
 }
 
 func (h *handler) subnetList(req *restful.Request, rsp *restful.Response) {
@@ -55,7 +68,9 @@ func (h *handler) subnetDelete(req *restful.Request, rsp *restful.Response) {
 		return
 	}
 
-	// TODO(shawnlu): Send subnet uuid to channel to sync conf
+	// Send subnet uuid to channel to sync conf
+	h.ChangeSubnetChan <- uid
+	klog.V(4).Infof("Subnet evnet: DEL %s", uid)
 
 	rsp.WriteEntity(true)
 }
@@ -70,6 +85,10 @@ func (h *handler) subnetCreate(req *restful.Request, rsp *restful.Response) {
 	if subnet.Name == "" || subnet.Iface == "" || subnet.Addr == "" {
 		rsp.WriteErrorString(http.StatusBadRequest, "name, iface, addr needed")
 		return
+	}
+
+	if subnet.Port == 0 {
+		subnet.Port = 51820
 	}
 
 	if strings.Contains(subnet.Iface, " ") {
@@ -107,13 +126,16 @@ func (h *handler) subnetCreate(req *restful.Request, rsp *restful.Response) {
 		return
 	}
 
-	// TODO(shawnlu): Send subnet uuid to channel to sync conf
+	// Send subnet uuid to channel to sync conf
+	h.AddSubnetChan <- subnet.Uuid
+	klog.V(4).Infof("Subnet evnet: ADD %s", subnet.Uuid)
 
 	rsp.WriteEntity(map[string]string{
 		"name":  subnet.Name,
 		"uuid":  subnet.Uuid,
 		"iface": subnet.Iface,
 		"addr":  subnet.Addr,
+		"port":  strconv.Itoa(subnet.Port),
 	})
 }
 
@@ -141,8 +163,6 @@ func (h *handler) subnetPeerList(req *restful.Request, rsp *restful.Response) {
 			"enable": enable,
 		})
 	}
-
-	// TODO(shawnlu): Send subnet uuid to channel to sync conf
 
 	rsp.WriteEntity(rst)
 }
@@ -211,7 +231,9 @@ func (h *handler) subnetPeerCreate(req *restful.Request, rsp *restful.Response) 
 		return
 	}
 
-	// TODO(shawnlu): Send subnet uuid to channel to sync conf
+	// Send subnet uuid to channel to sync conf
+	h.ChangeSubnetChan <- subnet.Uuid
+	klog.V(4).Infof("Subnet evnet: Peer ADD %s", subnet.Uuid)
 
 	rsp.WriteEntity(map[string]string{
 		"name":   peer.Name,
@@ -229,6 +251,9 @@ func (h *handler) subnetPeerDelete(req *restful.Request, rsp *restful.Response) 
 		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.ChangeSubnetChan <- subnetId
+	klog.V(4).Infof("Subnet evnet: Peer DEL %s", subnetId)
 
 	rsp.WriteEntity(true)
 }
@@ -270,7 +295,73 @@ func (h *handler) subnetPeerEnable(req *restful.Request, rsp *restful.Response) 
 			rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
 			return
 		}
+
+		h.ChangeSubnetChan <- subnetId
+		klog.V(4).Infof("Subnet evnet: Peer CHG %s", subnetId)
 	}
 
 	rsp.WriteEntity(true)
+}
+
+func (h *handler) subnetPeerConfig(req *restful.Request, rsp *restful.Response) {
+	subnetId := req.PathParameter("subnet")
+	peerId := req.PathParameter("peer")
+	peer := new(modelv1.Peer)
+	subnet := new(modelv1.Subnet)
+
+	ok, err := h.DB.Where("uuid = ?", subnetId).Get(subnet)
+	if err != nil {
+		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		rsp.WriteErrorString(http.StatusBadRequest, fmt.Sprintf("subnet %s not exist", subnetId))
+		return
+	}
+
+	ok, err = h.DB.Where("uuid = ? AND subnet = ?", peerId, subnet.Uuid).Get(peer)
+	if err != nil {
+		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		rsp.WriteErrorString(http.StatusBadRequest, fmt.Sprintf("peer %s in subnet %s not exist", peerId, subnet.Uuid))
+		return
+	}
+
+	_, subnetNet, err := net.ParseCIDR(subnet.Addr)
+	if err != nil {
+		rsp.WriteErrorString(http.StatusBadRequest, fmt.Sprintf("invalid subnet address %s", err.Error()))
+		return
+	}
+	masklen, _ := subnetNet.Mask.Size()
+	subnetCidr := fmt.Sprintf("%s/%d", subnetNet.IP.String(), masklen)
+
+	allowedIps := append(h.rRoute, subnetCidr)
+
+	wg := &core.WG{
+		ExternalIP: h.accessIp,
+		Interface: &core.Iface{
+			PublicKey:  subnet.PubKey,
+			ListenPort: subnet.Port,
+		},
+		Peers: make([]*core.Peer, 0),
+	}
+	p := &core.Peer{
+		PrivateKey: peer.PriKey,
+		Address:    peer.Addr,
+		AllowedIPs: strings.Join(allowedIps, ","),
+	}
+
+	cf, err := wg.GenerateClientConf(p)
+	if err != nil {
+		klog.Errorf("Failed to generate client config for peer %+v, subent %+v: %s", peer, subnet, err.Error())
+		rsp.WriteErrorString(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	rsp.WriteEntity(map[string]string{
+		"name":   peer.Name,
+		"config": cf,
+	})
 }

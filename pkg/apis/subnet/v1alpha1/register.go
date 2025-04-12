@@ -11,11 +11,11 @@ const (
 	version = "v1alpha1"
 )
 
-func AddToContainer(container *restful.Container, db *xorm.Engine) {
+func AddToContainer(container *restful.Container, db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, accessIp string, rroute []string) {
 	ws := runtime.NewApiWebService(group, version)
 	ws.Consumes(restful.MIME_JSON).Produces(restful.MIME_JSON)
 
-	handler := newHandler(db)
+	handler := newHandler(db, addSubnetChan, changeSubnetChan, accessIp, rroute)
 
 	ws.Route(ws.POST("/subnets").To(handler.subnetCreate))
 	ws.Route(ws.GET("/subnets").To(handler.subnetList))
@@ -28,6 +28,10 @@ func AddToContainer(container *restful.Container, db *xorm.Engine) {
 		Param(ws.PathParameter("peer", "uuid of peer").DataType("string").Required(true)))
 	ws.Route(ws.POST("/subnets/{subnet}/peers/{peer}/enable").
 		To(handler.subnetPeerEnable).
+		Param(ws.PathParameter("subnet", "uuid of subnet").DataType("string").Required(true)).
+		Param(ws.PathParameter("peer", "uuid of peer").DataType("string").Required(true)))
+	ws.Route(ws.GET("/subnets/{subnet}/peers/{peer}/config").
+		To(handler.subnetPeerConfig).
 		Param(ws.PathParameter("subnet", "uuid of subnet").DataType("string").Required(true)).
 		Param(ws.PathParameter("peer", "uuid of peer").DataType("string").Required(true)))
 

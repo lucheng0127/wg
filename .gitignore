@@ -1,2 +1,4 @@
 .vscode
 apiserver.db
+apiserver
+wg0.conf

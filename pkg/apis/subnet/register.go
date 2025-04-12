@@ -6,6 +6,6 @@ import (
 	"xorm.io/xorm"
 )
 
-func AddToContainer(container *restful.Container, db *xorm.Engine) {
-	v1alpha1.AddToContainer(container, db)
+func AddToContainer(container *restful.Container, db *xorm.Engine, addsubnetChan chan string, changeSubnetChan chan string, accessIp string, rroute []string) {
+	v1alpha1.AddToContainer(container, db, addsubnetChan, changeSubnetChan, accessIp, rroute)
 }

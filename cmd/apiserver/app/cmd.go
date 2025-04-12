@@ -1,8 +1,10 @@
 package app
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lucheng0127/wg/pkg/apiserver"
@@ -46,6 +48,10 @@ func NewApiserverCmd() *cobra.Command {
 }
 
 func precheck() error {
+	if os.Geteuid() != 0 {
+		return errors.New("Please run as root")
+	}
+
 	_, err := cmd.NewCmdMgr("wg")
 	if err != nil {
 		return err

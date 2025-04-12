@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/emicklei/go-restful"
 	_ "github.com/mattn/go-sqlite3"
@@ -15,15 +16,18 @@ import (
 	"github.com/lucheng0127/wg/pkg/apis/ping"
 	"github.com/lucheng0127/wg/pkg/apis/subnet"
 	"github.com/lucheng0127/wg/pkg/config"
+	"github.com/lucheng0127/wg/pkg/core"
 	"github.com/lucheng0127/wg/pkg/filters"
 	modelv1 "github.com/lucheng0127/wg/pkg/models/v1alpha1"
 )
 
 type ApiServer struct {
-	Config  *config.ApiserverConf
-	DB      *xorm.Engine
-	Server  *http.Server
-	handler http.Handler
+	Config            *config.ApiserverConf
+	DB                *xorm.Engine
+	Server            *http.Server
+	handler           http.Handler
+	ChangeSubnetQueue chan string // Channel to get cahnged subent and sync to system
+	AddSubnetQueue    chan string
 }
 
 func NewApiserver(cfg *config.ApiserverConf) (*ApiServer, error) {
@@ -49,6 +53,9 @@ func NewApiserver(cfg *config.ApiserverConf) (*ApiServer, error) {
 	httpSvc.Addr = fmt.Sprintf(":%d", svc.Config.Port)
 	svc.Server = httpSvc
 
+	svc.ChangeSubnetQueue = make(chan string, 254)
+	svc.AddSubnetQueue = make(chan string, 254)
+
 	return svc, nil
 }
 
@@ -56,9 +63,9 @@ func (svc *ApiServer) installApis() {
 	container := restful.NewContainer()
 	container.DoNotRecover(false)
 
-	// TODO(shawnlu): Add api
+	// Add api
 	ping.AddToContainer(container)
-	subnet.AddToContainer(container, svc.DB)
+	subnet.AddToContainer(container, svc.DB, svc.AddSubnetQueue, svc.ChangeSubnetQueue, svc.Config.AceessIP, svc.Config.RRoutes)
 
 	svc.handler = container
 }
@@ -80,13 +87,60 @@ func (svc *ApiServer) syncDb() error {
 	return nil
 }
 
+func (svc *ApiServer) syncWg() error {
+	var subnets []modelv1.Subnet
+	if err := svc.DB.Find(&subnets); err != nil {
+		klog.Errorf("Failed to get subnets from db: %s", err.Error())
+		return err
+	}
+
+	for _, subnet := range subnets {
+		klog.V(4).Infof("Setup subnet: %s uuid: %s iface: %s", subnet.Name, subnet.Uuid, subnet.Iface)
+		var peers []modelv1.Peer
+		if err := svc.DB.Where("subnet = ?", subnet.Uuid).Find(&peers); err != nil {
+			return fmt.Errorf("Failed to get subnet %s uuid %s peers from db: %s", subnet.Name, subnet.Uuid, err.Error())
+		}
+
+		wg := &core.WG{
+			Name:   subnet.Iface,
+			CfgDir: svc.Config.BaseDir,
+			Interface: &core.Iface{
+				Address:    subnet.Addr,
+				PrivateKey: subnet.PriKey,
+				PublicKey:  subnet.PubKey,
+				ListenPort: subnet.Port,
+			},
+			Peers: make([]*core.Peer, 0),
+		}
+
+		for _, peer := range peers {
+			wg.Peers = append(wg.Peers, &core.Peer{
+				Name:       peer.Name,
+				PrivateKey: peer.PriKey,
+				PublicKey:  peer.PubKey,
+				AllowedIPs: svc.getPeerAllowdIps(peer.Addr),
+			})
+		}
+
+		if err := wg.Up(); err != nil {
+			return fmt.Errorf("Failed to setup subnet: %s uuid: %s iface: %s: %s", subnet.Name, subnet.Uuid, subnet.Iface, err.Error())
+		}
+	}
+
+	klog.Info("Sync wireguard finished")
+	return nil
+}
+
 func (svc *ApiServer) PreRun(ctx context.Context) error {
 	// Init db
 	if err := svc.syncDb(); err != nil {
 		return err
 	}
 
-	// TODO(shawnlu): Sync wireuard conf from db
+	// Sync wireuard conf from db
+	if err := svc.syncWg(); err != nil {
+		return err
+	}
 
 	// Init http server
 	svc.installApis()
@@ -94,10 +148,146 @@ func (svc *ApiServer) PreRun(ctx context.Context) error {
 	return nil
 }
 
+func (svc *ApiServer) Teardwon() {
+	var subnets []modelv1.Subnet
+	if err := svc.DB.Find(&subnets); err != nil {
+		klog.Error(err)
+		return
+	}
+
+	for _, subnet := range subnets {
+		klog.V(4).Infof("Teardown subnet: %s uuid: %s iface: %s", subnet.Name, subnet.Uuid, subnet.Iface)
+		wg := &core.WG{
+			Name:      subnet.Iface,
+			Interface: new(core.Iface),
+		}
+
+		if err := wg.Down(); err != nil {
+			klog.Errorf("Teardown wireguard %s: %s", wg.Name, err.Error())
+			continue
+		}
+	}
+}
+
+func (svc *ApiServer) getPeerAllowdIps(peerIP string) string {
+	return fmt.Sprintf("%s/32", strings.Split(peerIP, "/")[0])
+}
+
+func (svc *ApiServer) processAddSubnet() {
+	for {
+		uid := <-svc.AddSubnetQueue
+		klog.V(4).Infof("Start to process add subent %s", uid)
+
+		subnet := new(modelv1.Subnet)
+		ok, err := svc.DB.Where("uuid = ?", uid).Get(subnet)
+		if err != nil {
+			klog.Errorf("Failed to retrive subnet from db: %s", err.Error())
+			continue
+		}
+
+		if !ok {
+			klog.Warningf("Subnet %s not found", uid)
+			continue
+		}
+
+		wg := &core.WG{
+			Name:   subnet.Iface,
+			CfgDir: svc.Config.BaseDir,
+			Interface: &core.Iface{
+				Address:    subnet.Addr,
+				PrivateKey: subnet.PriKey,
+				PublicKey:  subnet.PubKey,
+				ListenPort: subnet.Port,
+			},
+			Peers: make([]*core.Peer, 0),
+		}
+
+		if err := wg.Up(); err != nil {
+			klog.Errorf("Failed to setup subnet: %s uuid: %s iface: %s: %s", subnet.Name, subnet.Uuid, subnet.Iface, err.Error())
+			continue
+		}
+	}
+}
+
+func (svc *ApiServer) processChangedSubnet() {
+	for {
+		uid := <-svc.ChangeSubnetQueue
+		klog.V(4).Infof("Start to process change subent %s", uid)
+
+		subnet := new(modelv1.Subnet)
+
+		ok, err := svc.DB.Where("uuid = ?", uid).Get(subnet)
+		if err != nil {
+			klog.Errorf("Failed to retrive subnet from db: %s", err.Error())
+			continue
+		}
+
+		if !ok {
+			// Subent has beeen deleted, delete from system
+			wg := &core.WG{
+				Name:      subnet.Iface,
+				CfgDir:    svc.Config.BaseDir,
+				Interface: new(core.Iface),
+			}
+
+			if err := wg.Down(); err != nil {
+				klog.Errorf("Failed to delete wireguard interface %s for subnet %s uuid %s: %s", subnet.Iface, subnet.Name, subnet.Uuid, err.Error())
+				continue
+			}
+
+			continue
+		}
+
+		// Sync change
+		var peers []modelv1.Peer
+		if err := svc.DB.Where("subnet = ?", subnet.Uuid).Find(&peers); err != nil {
+			klog.Errorf("Failed to get subnet %s uuid %s peers from db: %s", subnet.Name, subnet.Uuid, err.Error())
+			continue
+		}
+
+		wg := &core.WG{
+			Name:   subnet.Iface,
+			CfgDir: svc.Config.BaseDir,
+			Interface: &core.Iface{
+				PrivateKey: subnet.PriKey,
+				ListenPort: subnet.Port,
+			},
+			Peers: make([]*core.Peer, 0),
+		}
+
+		for _, peer := range peers {
+			if !peer.Enable {
+				continue
+			}
+
+			wg.Peers = append(wg.Peers, &core.Peer{
+				Name:       peer.Name,
+				PublicKey:  peer.PubKey,
+				AllowedIPs: svc.getPeerAllowdIps(peer.Addr),
+			})
+		}
+
+		if err := wg.Update(); err != nil {
+			klog.Errorf("Failed to sync config for interface %s with config %s", subnet.Iface, wg, wg.CfgFilePath())
+			continue
+		}
+	}
+}
+
 func (svc *ApiServer) Run(ctx context.Context) error {
 	klog.Infof("Start listen on port %d ...", svc.Config.Port)
 
-	// TODO(shwnlu): Goruntine to handle signal to teardown wireuard
+	// Goruntine to handle signal to teardown wireuard
+	go func() {
+		<-ctx.Done()
+		klog.Info("Term signal received, teardown wireguard server, please wait ...")
+		svc.Teardwon()
+		klog.Info("Teardwon finished, ctrl+c to exist")
+	}()
+
+	// Precess next changed subnet
+	go svc.processAddSubnet()
+	go svc.processChangedSubnet()
 
 	svc.Server.Handler = svc.handler
 	if err := svc.Server.ListenAndServeTLS("", ""); err != nil {
