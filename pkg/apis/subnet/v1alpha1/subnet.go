@@ -18,20 +18,22 @@ import (
 )
 
 type handler struct {
-	DB               *xorm.Engine
-	ChangeSubnetChan chan string
-	AddSubnetChan    chan string
-	accessIp         string
-	rRoute           []string
+	DB                *xorm.Engine
+	ChangeSubnetChan  chan string
+	AddSubnetChan     chan string
+	DeletedSubnetChan chan string
+	accessIp          string
+	rRoute            []string
 }
 
-func newHandler(db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, accessIp string, rroute []string) *handler {
+func newHandler(db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, deletedSubnetChan chan string, accessIp string, rroute []string) *handler {
 	return &handler{
-		DB:               db,
-		ChangeSubnetChan: changeSubnetChan,
-		AddSubnetChan:    addSubnetChan,
-		accessIp:         accessIp,
-		rRoute:           rroute,
+		DB:                db,
+		ChangeSubnetChan:  changeSubnetChan,
+		AddSubnetChan:     addSubnetChan,
+		DeletedSubnetChan: deletedSubnetChan,
+		accessIp:          accessIp,
+		rRoute:            rroute,
 	}
 }
 
@@ -58,6 +60,17 @@ func (h *handler) subnetList(req *restful.Request, rsp *restful.Response) {
 
 func (h *handler) subnetDelete(req *restful.Request, rsp *restful.Response) {
 	uid := req.PathParameter("uuid")
+	subnet := new(modelv1.Subnet)
+	ok, err := h.DB.Where("uuid = ?", uid).Get(subnet)
+	if err != nil {
+		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		rsp.WriteEntity(true)
+		return
+	}
+
 	if _, err := h.DB.Delete(&modelv1.Peer{Subnet: uid}); err != nil {
 		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
@@ -69,8 +82,9 @@ func (h *handler) subnetDelete(req *restful.Request, rsp *restful.Response) {
 	}
 
 	// Send subnet uuid to channel to sync conf
-	h.ChangeSubnetChan <- uid
-	klog.V(4).Infof("Subnet evnet: DEL %s", uid)
+	// After delete, cannot get data from db, send subnet.Iface
+	h.DeletedSubnetChan <- subnet.Iface
+	klog.V(4).Infof("Subnet evnet: DEL subnet %s iface %s", subnet.Uuid, subnet.Iface)
 
 	rsp.WriteEntity(true)
 }

@@ -22,12 +22,13 @@ import (
 )
 
 type ApiServer struct {
-	Config            *config.ApiserverConf
-	DB                *xorm.Engine
-	Server            *http.Server
-	handler           http.Handler
-	ChangeSubnetQueue chan string // Channel to get cahnged subent and sync to system
-	AddSubnetQueue    chan string
+	Config             *config.ApiserverConf
+	DB                 *xorm.Engine
+	Server             *http.Server
+	handler            http.Handler
+	ChangeSubnetQueue  chan string // Channel to get cahnged subent and sync to system
+	AddSubnetQueue     chan string
+	DeletedSubnetQueue chan string
 }
 
 func NewApiserver(cfg *config.ApiserverConf) (*ApiServer, error) {
@@ -55,6 +56,7 @@ func NewApiserver(cfg *config.ApiserverConf) (*ApiServer, error) {
 
 	svc.ChangeSubnetQueue = make(chan string, 254)
 	svc.AddSubnetQueue = make(chan string, 254)
+	svc.DeletedSubnetQueue = make(chan string, 254)
 
 	return svc, nil
 }
@@ -65,7 +67,7 @@ func (svc *ApiServer) installApis() {
 
 	// Add api
 	ping.AddToContainer(container)
-	subnet.AddToContainer(container, svc.DB, svc.AddSubnetQueue, svc.ChangeSubnetQueue, svc.Config.AceessIP, svc.Config.RRoutes)
+	subnet.AddToContainer(container, svc.DB, svc.AddSubnetQueue, svc.ChangeSubnetQueue, svc.DeletedSubnetQueue, svc.Config.AceessIP, svc.Config.RRoutes)
 
 	svc.handler = container
 }
@@ -171,6 +173,23 @@ func (svc *ApiServer) Teardwon() {
 
 func (svc *ApiServer) getPeerAllowdIps(peerIP string) string {
 	return fmt.Sprintf("%s/32", strings.Split(peerIP, "/")[0])
+}
+
+func (svc *ApiServer) processDeletedSubnet() {
+	for {
+		iface := <-svc.DeletedSubnetQueue
+		klog.V(4).Infof("Start to process delete subent %s", iface)
+
+		wg := &core.WG{
+			Name:      iface,
+			Interface: new(core.Iface),
+		}
+
+		if err := wg.Down(); err != nil {
+			klog.Errorf("Failed to delete wireguard interface %s: %s", wg.Name, err.Error())
+			continue
+		}
+	}
 }
 
 func (svc *ApiServer) processAddSubnet() {
@@ -288,6 +307,7 @@ func (svc *ApiServer) Run(ctx context.Context) error {
 	// Precess next changed subnet
 	go svc.processAddSubnet()
 	go svc.processChangedSubnet()
+	go svc.processDeletedSubnet()
 
 	svc.Server.Handler = svc.handler
 	if err := svc.Server.ListenAndServeTLS("", ""); err != nil {

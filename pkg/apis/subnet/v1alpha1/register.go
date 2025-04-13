@@ -11,11 +11,11 @@ const (
 	version = "v1alpha1"
 )
 
-func AddToContainer(container *restful.Container, db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, accessIp string, rroute []string) {
+func AddToContainer(container *restful.Container, db *xorm.Engine, addSubnetChan chan string, changeSubnetChan chan string, deletedSubnetChan chan string, accessIp string, rroute []string) {
 	ws := runtime.NewApiWebService(group, version)
 	ws.Consumes(restful.MIME_JSON).Produces(restful.MIME_JSON)
 
-	handler := newHandler(db, addSubnetChan, changeSubnetChan, accessIp, rroute)
+	handler := newHandler(db, addSubnetChan, changeSubnetChan, deletedSubnetChan, accessIp, rroute)
 
 	ws.Route(ws.POST("/subnets").To(handler.subnetCreate))
 	ws.Route(ws.GET("/subnets").To(handler.subnetList))
