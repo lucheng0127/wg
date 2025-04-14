@@ -156,29 +156,33 @@ func (h *handler) subnetCreate(req *restful.Request, rsp *restful.Response) {
 func (h *handler) subnetPeerList(req *restful.Request, rsp *restful.Response) {
 	subnet := req.PathParameter("subnet")
 
-	var peers []modelv1.Peer
+	var peers []*modelv1.Peer
 	if err := h.DB.Where("subnet = ?", subnet).Find(&peers); err != nil {
 		rsp.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	rst := make([]map[string]string, 0)
+	//rst := make([]map[string]string, 0)
+	//for _, p := range peers {
+	//	enable := "False"
+	//	if p.Enable {
+	//		enable = "True"
+	//	}
+	//	rst = append(rst, map[string]string{
+	//		"name":   p.Name,
+	//		"uuid":   p.Uuid,
+	//		"subnet": p.Subnet,
+	//		"addr":   p.Addr,
+	//		"pubkey": p.PubKey,
+	//		"enable": enable,
+	//	})
+	//}
+
 	for _, p := range peers {
-		enable := "False"
-		if p.Enable {
-			enable = "True"
-		}
-		rst = append(rst, map[string]string{
-			"name":   p.Name,
-			"uuid":   p.Uuid,
-			"subnet": p.Subnet,
-			"addr":   p.Addr,
-			"pubkey": p.PubKey,
-			"enable": enable,
-		})
+		p.PriKey = "Hiden"
 	}
 
-	rsp.WriteEntity(rst)
+	rsp.WriteEntity(peers)
 }
 
 func (h *handler) subnetPeerCreate(req *restful.Request, rsp *restful.Response) {

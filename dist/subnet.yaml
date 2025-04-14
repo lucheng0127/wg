@@ -1,0 +1,4 @@
+name: default
+iface: wg0
+addr: 10.66.0.1/24
+port: 51820
