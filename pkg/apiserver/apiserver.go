@@ -317,9 +317,10 @@ func (svc *ApiServer) Run(ctx context.Context) error {
 	// Goruntine to handle signal to teardown wireuard
 	go func() {
 		<-ctx.Done()
-		klog.Info("Term signal received, teardown wireguard server, please wait ...")
+		klog.Info("Term signal received, teardown wireguard server, please wait ...\nCtrl+C to exit force")
 		svc.Teardwon()
-		klog.Info("Teardwon finished, ctrl+c to exist")
+		klog.Info("Teardwon finished, to exist")
+		os.Exit(0)
 	}()
 
 	// Precess next changed subnet
