@@ -7,7 +7,7 @@ import (
 )
 
 type WgCtlConf struct {
-	ServerCrt string `yaml:"server-crt"`
+	CaCrt     string `yaml:"ca-crt"`
 	ClientCrt string `yaml:"client-crt"`
 	ClientKey string `yaml:"client-key"`
 }

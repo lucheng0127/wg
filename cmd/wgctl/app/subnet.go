@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	modelv1 "github.com/lucheng0127/wg/pkg/models/v1alpha1"
-	"github.com/lucheng0127/wg/pkg/request"
 	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -19,8 +18,9 @@ var (
 )
 
 func subnetList(cmd *cobra.Command, args []string) error {
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.SubnetList()
@@ -71,9 +71,11 @@ func subnetAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
+
 	rsp, err := req.SubnetAdd(raw)
 	if err != nil {
 		return err
@@ -92,8 +94,9 @@ func subnetDel(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.SubnetDel(args[0])

@@ -3,8 +3,11 @@ package apiserver
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -48,7 +51,22 @@ func NewApiserver(cfg *config.ApiserverConf) (*ApiServer, error) {
 		return nil, err
 	}
 
-	tlsConf := &tls.Config{Certificates: []tls.Certificate{cer}}
+	clientCaPool := x509.NewCertPool()
+	caCrt, err := os.ReadFile(filepath.Join(cfg.BaseDir, cfg.Crt))
+	if err != nil {
+		return nil, err
+	}
+
+	ok := clientCaPool.AppendCertsFromPEM(caCrt)
+	if !ok {
+		return nil, errors.New("failed to add crt to client ca")
+	}
+
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{cer},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCaPool,
+	}
 	httpSvc := new(http.Server)
 	httpSvc.TLSConfig = tlsConf
 	httpSvc.Addr = fmt.Sprintf(":%d", svc.Config.Port)
@@ -100,7 +118,7 @@ func (svc *ApiServer) syncWg() error {
 		klog.V(4).Infof("Setup subnet: %s uuid: %s iface: %s", subnet.Name, subnet.Uuid, subnet.Iface)
 		var peers []modelv1.Peer
 		if err := svc.DB.Where("subnet = ?", subnet.Uuid).Find(&peers); err != nil {
-			return fmt.Errorf("Failed to get subnet %s uuid %s peers from db: %s", subnet.Name, subnet.Uuid, err.Error())
+			return fmt.Errorf("failed to get subnet %s uuid %s peers from db: %s", subnet.Name, subnet.Uuid, err.Error())
 		}
 
 		wg := &core.WG{
@@ -125,7 +143,7 @@ func (svc *ApiServer) syncWg() error {
 		}
 
 		if err := wg.Up(); err != nil {
-			return fmt.Errorf("Failed to setup subnet: %s uuid: %s iface: %s: %s", subnet.Name, subnet.Uuid, subnet.Iface, err.Error())
+			return fmt.Errorf("failed to setup subnet: %s uuid: %s iface: %s: %s", subnet.Name, subnet.Uuid, subnet.Iface, err.Error())
 		}
 	}
 
@@ -287,7 +305,7 @@ func (svc *ApiServer) processChangedSubnet() {
 		}
 
 		if err := wg.Update(); err != nil {
-			klog.Errorf("Failed to sync config for interface %s with config %s", subnet.Iface, wg, wg.CfgFilePath())
+			klog.Errorf("failed to sync config for interface %s with config %s", subnet.Iface, wg.CfgFilePath())
 			continue
 		}
 	}

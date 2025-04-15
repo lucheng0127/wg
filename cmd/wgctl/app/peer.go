@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	modelv1 "github.com/lucheng0127/wg/pkg/models/v1alpha1"
-	"github.com/lucheng0127/wg/pkg/request"
 	"github.com/rodaine/table"
 	"github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
@@ -25,8 +24,9 @@ func peerList(cmd *cobra.Command, args []string) error {
 		return errors.New("subnet needed")
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.SubnetPeerList(peerSubnet)
@@ -76,9 +76,11 @@ func peerAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
+
 	rsp, err := req.PeerAdd(raw, peerRes.Subnet)
 	if err != nil {
 		return err
@@ -97,8 +99,9 @@ func peerDel(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.PeerDel(peerSubnet, args[0])
@@ -125,8 +128,9 @@ func peerConf(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.PeerConf(peerSubnet, args[0])
@@ -175,8 +179,9 @@ func peerSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := &request.ReqMgr{
-		Host: "https://127.0.0.1:5443",
+	req, err := getRequest(cfgFile)
+	if err != nil {
+		return err
 	}
 
 	rsp, err := req.PeerSet(peerSubnet, args[0], raw)
