@@ -28,71 +28,99 @@ When exit, it will handle the signal do teardown to delete wireguard interfaces.
 
 Create subnet
 ```
-➜  wg git:(main) ✗ ./wgctl subnet list                      
-UUID  Name  Address  Public Key  
-➜  wg git:(main) ✗ ./wgctl subnet add -f dist/subnet.yaml
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml subnet add -f dist/subnet.yaml                 
 {
- "addr": "10.66.0.1/24",
+ "addr": "10.67.0.1/24",
  "iface": "wg0",
  "name": "default",
  "port": "51820",
- "uuid": "d2e5996d-19be-11f0-92bd-68eda427e04a"
+ "uuid": "4accc36b-1c25-11f0-8e92-68eda427e04a"
 }
-➜  wg git:(main) ✗ ./wgctl subnet list                   
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml subnet list
 UUID                                  Name     Address       Public Key                                    
-d2e5996d-19be-11f0-92bd-68eda427e04a  default  10.66.0.1/24  aiA0hfOtAyQK0fj6Pkt5j1dhrjiNU1nwqmTNW98IXzc=
+4accc36b-1c25-11f0-8e92-68eda427e04a  default  10.67.0.1/24  sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=  
+➜  wg git:(main) ✗ wg
+interface: wg0
+  public key: sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=
+  private key: (hidden)
+  listening port: 51820
 ```
 
 Create peer
 ```
-➜  wg git:(main) ✗ ./wgctl peer list -s d2e5996d-19be-11f0-92bd-68eda427e04a                 
-UUID  User  Address  Public Key  Enable  
-➜  wg git:(main) ✗ ./wgctl peer add -f dist/peer.yaml
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer add -f dist/peer.yaml 
 {
- "addr": "10.66.0.2/24",
+ "addr": "10.67.0.2/24",
  "name": "lucheng",
- "subnet": "d2e5996d-19be-11f0-92bd-68eda427e04a",
- "uuid": "36e422f3-19bf-11f0-92bd-68eda427e04a"
+ "subnet": "4accc36b-1c25-11f0-8e92-68eda427e04a",
+ "uuid": "88f1327d-1c25-11f0-8e92-68eda427e04a"
 }
-➜  wg git:(main) ✗ ./wgctl peer list -s d2e5996d-19be-11f0-92bd-68eda427e04a
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer list -s 4accc36b-1c25-11f0-8e92-68eda427e04a
 UUID                                  User     Address       Public Key                                    Enable  
-36e422f3-19bf-11f0-92bd-68eda427e04a  lucheng  10.66.0.2/24  hi37FXbt/vhfm2P07MmWqff7MSdCVe1Yu+Ro+mCjfyM=  true
-➜  wg git:(main) wg  
+88f1327d-1c25-11f0-8e92-68eda427e04a  lucheng  10.67.0.2/24  zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=  true    
+➜  wg git:(main) ✗ wg                                                                           
 interface: wg0
-  public key: aiA0hfOtAyQK0fj6Pkt5j1dhrjiNU1nwqmTNW98IXzc=
+  public key: sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=
   private key: (hidden)
   listening port: 51820
 
-peer: hi37FXbt/vhfm2P07MmWqff7MSdCVe1Yu+Ro+mCjfyM=
-  allowed ips: 10.66.0.2/32
+peer: zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=
+  allowed ips: 10.67.0.2/32
 ```
 
 Set peer disable and enable
 ```
-➜  wg git:(main) ✗ ./wgctl peer set -s d2e5996d-19be-11f0-92bd-68eda427e04a 36e422f3-19bf-11f0-92bd-68eda427e04a disable
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer set -s 4accc36b-1c25-11f0-8e92-68eda427e04a 88f1327d-1c25-11f0-8e92-68eda427e04a disable 
 true
-➜  wg git:(main) ✗ ./wgctl peer list -s d2e5996d-19be-11f0-92bd-68eda427e04a                                            
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer list -s 4accc36b-1c25-11f0-8e92-68eda427e04a                                            
 UUID                                  User     Address       Public Key                                    Enable  
-36e422f3-19bf-11f0-92bd-68eda427e04a  lucheng  10.66.0.2/24  hi37FXbt/vhfm2P07MmWqff7MSdCVe1Yu+Ro+mCjfyM=  false   
+88f1327d-1c25-11f0-8e92-68eda427e04a  lucheng  10.67.0.2/24  zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=  false   
 ➜  wg git:(main) ✗ wg
 interface: wg0
-  public key: aiA0hfOtAyQK0fj6Pkt5j1dhrjiNU1nwqmTNW98IXzc=
+  public key: sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=
   private key: (hidden)
   listening port: 51820
-➜  wg git:(main) ✗ ./wgctl peer set -s d2e5996d-19be-11f0-92bd-68eda427e04a 36e422f3-19bf-11f0-92bd-68eda427e04a enable 
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer set -s 4accc36b-1c25-11f0-8e92-68eda427e04a 88f1327d-1c25-11f0-8e92-68eda427e04a enable 
 true
-➜  wg git:(main) ✗ ./wgctl peer list -s d2e5996d-19be-11f0-92bd-68eda427e04a                                           
+➜  wg git:(main) ✗ wgctl -c /opt/wg/wgctl.yaml peer list -s 4accc36b-1c25-11f0-8e92-68eda427e04a                                           
 UUID                                  User     Address       Public Key                                    Enable  
-36e422f3-19bf-11f0-92bd-68eda427e04a  lucheng  10.66.0.2/24  hi37FXbt/vhfm2P07MmWqff7MSdCVe1Yu+Ro+mCjfyM=  true    
-➜  wg git:(main) ✗ wg                                                                                                  
+88f1327d-1c25-11f0-8e92-68eda427e04a  lucheng  10.67.0.2/24  zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=  true    
+➜  wg git:(main) ✗ wg
 interface: wg0
-  public key: aiA0hfOtAyQK0fj6Pkt5j1dhrjiNU1nwqmTNW98IXzc=
+  public key: sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=
   private key: (hidden)
   listening port: 51820
 
-peer: hi37FXbt/vhfm2P07MmWqff7MSdCVe1Yu+Ro+mCjfyM=
-  allowed ips: 10.66.0.2/32
+peer: zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=
+  allowed ips: 10.67.0.2/32
 ```
 
 Get peer config
-![peer config qrcode](./peerconf.png)
+![peer config qrcode](./dist/imgs/peerconf.jpg)
+
+
+Connect to server with wireguard app
+```
+➜  wg git:(main) ✗ wg                 
+interface: wg0
+  public key: sMtnzgxbK5Xv74nHDMoJ/vbhkAjr+AZ92BWJwWbOVjo=
+  private key: (hidden)
+  listening port: 51820
+
+peer: zOyDNHmSZDgQEcZJJ/sDvzV4mnm1CvetZDnhM206xhc=
+  endpoint: 10.28.66.26:49378
+  allowed ips: 10.67.0.2/32
+  latest handshake: 1 minute, 7 seconds ago
+  transfer: 404 B received, 220 B sent
+➜  wg git:(main) ✗ ping -c 1 10.67.0.2
+PING 10.67.0.2 (10.67.0.2) 56(84) bytes of data.
+64 bytes from 10.67.0.2: icmp_seq=1 ttl=64 time=837 ms
+
+--- 10.67.0.2 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 836.714/836.714/836.714/0.000 ms
+```
+
+Test
+![](./dist/imgs/peer.jpg)
+![](./dist/imgs/conn.jpg)
