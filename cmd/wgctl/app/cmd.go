@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path"
 
 	"github.com/lucheng0127/wg/pkg/config"
 	"github.com/lucheng0127/wg/pkg/request"
@@ -36,7 +38,14 @@ func NewCliCmd() *cobra.Command {
 		Use:   "wgctl",
 		Short: "Command line tool for manage vpn server",
 	}
-	cmd.PersistentFlags().StringVarP(&cfgFile, "conf", "c", "./client.yaml", "config file default ./client.yaml")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	defaultCfg := path.Join(homeDir, ".wg/client.yaml")
+	cmd.PersistentFlags().StringVarP(&cfgFile, "conf", "c", defaultCfg, fmt.Sprintf("config file default: %s", defaultCfg))
 
 	cmd.AddCommand(newSubnetCommand())
 	cmd.AddCommand(newPeerCommand())

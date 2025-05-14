@@ -17,6 +17,7 @@ import (
 var (
 	peerResFile string
 	peerSubnet  string
+	showRaw     bool
 )
 
 func peerList(cmd *cobra.Command, args []string) error {
@@ -143,6 +144,11 @@ func peerConf(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if showRaw {
+		fmt.Printf("# Config of peer %s\n\n%s", pcRsq.Name, pcRsq.Config)
+		return nil
+	}
+
 	qr, err := qrcode.New(pcRsq.Config, qrcode.Low)
 	if err != nil {
 		return err
@@ -234,6 +240,7 @@ func newPeerConfCommand() *cobra.Command {
 		RunE:  peerConf,
 	}
 
+	cmd.Flags().BoolVarP(&showRaw, "raw", "r", false, "show config in raw")
 	cmd.PersistentFlags().StringVarP(&peerSubnet, "subnet", "s", "", "subent uuid")
 	return cmd
 }
